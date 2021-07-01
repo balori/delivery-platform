@@ -1,0 +1,48 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/balori/deploy-tracker-api
+  tag: ""            # defaults to .Chart.AppVersion when empty
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 4000
+
+containerPort: 4000
+
+# Injected as `DATABASE_URL` etc. Non-secret config only.
+env:
+  NODE_ENV: production
+  LOG_LEVEL: info
+
+# Keys read from an existing Kubernetes Secret (created out of band / by external-secrets).
+envFromSecret: deploy-tracker-secrets
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+probes:
+  path: /health
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+ingress:
+  enabled: false
+  className: nginx
+  host: deploy-tracker.example.com
+  annotations: {}
+
+podAnnotations: {}
