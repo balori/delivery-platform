@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: deploy-tracker-staging
+
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/balori/deploy-tracker-api
+    newTag: staging
+
+patches:
+  - target:
+      kind: Deployment
+      name: deploy-tracker-api
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
