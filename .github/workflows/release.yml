@@ -1,0 +1,95 @@
+# Reusable release workflow. Application repos call this on a tag push so the
+# build → push → gated-deploy logic lives in one place instead of being copied
+# into every service. See examples/app-caller.yml for the calling side.
+name: release
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        description: "Image repository, e.g. ghcr.io/org/deploy-tracker-api"
+        required: true
+        type: string
+      build_context:
+        description: "Docker build context in the caller repo"
+        required: false
+        default: "."
+        type: string
+      overlay:
+        description: "Kustomize overlay path in THIS repo to apply"
+        required: false
+        default: "manifests/overlays/production"
+        type: string
+      namespace:
+        required: false
+        default: "deploy-tracker-production"
+        type: string
+    secrets:
+      kubeconfig:
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.image_name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.build_context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production   # gate: requires reviewer approval via GitHub Environments
+    steps:
+      - name: Check out the delivery repo (manifests)
+        uses: actions/checkout@v4
+        with:
+          repository: balori/delivery-platform
+          ref: main
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Authenticate to cluster
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.kubeconfig }}" | base64 -d > "$HOME/.kube/config"
+
+      - name: Apply overlay at the release tag
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          cd "${{ inputs.overlay }}"
+          kubectl kustomize . | sed "s|newTag: v0.1.0|newTag: ${TAG}|" | kubectl apply -f -
+
+      - name: Wait for rollout
+        run: |
+          kubectl -n "${{ inputs.namespace }}" rollout status \
+            deployment/deploy-tracker-api --timeout=180s

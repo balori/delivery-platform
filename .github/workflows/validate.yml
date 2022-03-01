@@ -1,0 +1,30 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint chart
+        run: helm lint charts/deploy-tracker
+      - name: Template (default + production values)
+        run: |
+          helm template charts/deploy-tracker >/dev/null
+          helm template charts/deploy-tracker -f charts/deploy-tracker/values-production.yaml >/dev/null
+
+  kustomize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build overlays
+        run: |
+          for env in staging production; do
+            kubectl kustomize "manifests/overlays/$env" >/dev/null
+            echo "ok: $env"
+          done
