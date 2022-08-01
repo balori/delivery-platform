@@ -1,0 +1,20 @@
+# Drop this into the APPLICATION repo (e.g. deploy-tracker) at
+# .github/workflows/release.yml. It calls the reusable release workflow in the
+# delivery-platform repo, so services don't duplicate build/deploy logic.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    uses: balori/delivery-platform/.github/workflows/release.yml@main
+    with:
+      image_name: ghcr.io/balori/deploy-tracker-api
+      build_context: ./apps/api
+      overlay: manifests/overlays/production
+      namespace: deploy-tracker-production
+    secrets:
+      kubeconfig: ${{ secrets.PROD_KUBECONFIG }}
